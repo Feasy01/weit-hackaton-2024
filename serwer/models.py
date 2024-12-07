@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TypedDict, Dict
+from typing import Dict
+from typing_extensions import TypedDict
 
 
 class Zone(Enum):
-    head_and_shoulders = auto()
-    back = auto()
-    buttocks = auto()
-    legs = auto()
+    head_and_shoulders = 0
+    back = 1
+    buttocks = 2
+    legs = 3
 
 
 class InitializeBedRequest(TypedDict):
@@ -18,8 +19,7 @@ class InitializeBedRequest(TypedDict):
 
 class UpdateSensorRequest(TypedDict):
     bed_id: int
-    zone: int
-    reading: int
+    zone_readings: list[int]
 
 
 class UpdateActuatorRequest(TypedDict):
@@ -47,3 +47,27 @@ class Bed:
     id: int
     sensors: Dict[Zone, Sensor]
     actuators: Dict[Zone, Actuator]
+
+
+SensorStates = ["Ok", "Medium Pressure", "High Pressure", "Very High Pressure"]
+
+
+class ActuatorStates(Enum):
+    LOW = "Low"
+    HIGH = "High"
+
+
+class UpdateActuatorQueryAirtable(TypedDict):
+    bed_id: int
+    head_and_shoulders: ActuatorStates
+    back: ActuatorStates
+    buttocks: ActuatorStates
+    legs: ActuatorStates
+
+
+class UpdateSensorStateAirtable(TypedDict):
+    bed_id: int
+    head_and_shoulders: str
+    back: str
+    buttocks: str
+    legs: str

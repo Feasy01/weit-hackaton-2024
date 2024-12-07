@@ -1,96 +1,126 @@
 from fastapi import FastAPI, HTTPException
 from typing import Dict
-from models import Bed, Zone, Sensor, Actuator, InitializeBedRequest, UpdateSensorRequest, UpdateActuatorRequest
+from serwer.models import (
+    Bed,
+    Zone,
+    Sensor,
+    Actuator,
+    InitializeBedRequest,
+    UpdateSensorRequest,
+    UpdateActuatorRequest,
+    SensorStates,
+    ActuatorStates,
+    UpdateActuatorQueryAirtable,
+    UpdateSensorStateAirtable,
+)
+from serwer.airtable import AirtableHandler
 
-app = FastAPI()
+class BedServer:
+    def __init__(self):
+        self.app = FastAPI()
+        self.beds: Dict[int, Bed] = {}
+        self.airtable_handler = AirtableHandler()
 
-beds: Dict[int, Bed] = {}
+        self.register_routes()
+        self.initialize_hardcoded_bed()
 
+    def register_routes(self):
+        @self.app.post("/initialize_bed")
+        async def initialize_bed(request: InitializeBedRequest):
+            return await self.initialize_bed(request)
 
-def initialize_hardcoded_bed():
-    bed_id = 1
+        @self.app.post("/update_sensor")
+        async def update_sensor(request: UpdateSensorRequest):
+            return await self.update_sensor(request)
 
-    sensors = {
-        Zone.head_and_shoulders: Sensor(id=1, zone=Zone.head_and_shoulders, reading=0),
-        Zone.back: Sensor(id=2, zone=Zone.back, reading=0),
-        Zone.buttocks: Sensor(id=3, zone=Zone.buttocks, reading=0),
-    }
+        @self.app.post("/update_actuator")
+        async def update_actuator(request: UpdateActuatorRequest):
+            return await self.update_actuator(request)
 
-    actuators = {
-        Zone.head_and_shoulders: Actuator(id=1, zone=Zone.head_and_shoulders, measurement=0),
-        Zone.back: Actuator(id=2, zone=Zone.back, measurement=0),
-        Zone.buttocks: Actuator(id=3, zone=Zone.buttocks, measurement=0),
-        Zone.legs: Actuator(id=4, zone=Zone.legs, measurement=0),
-    }
+        @self.app.get("/bed/{bed_id}")
+        async def get_bed(bed_id: int):
+            return await self.get_bed(bed_id)
 
-    beds[bed_id] = Bed(id=bed_id, sensors=sensors, actuators=actuators)
+    def initialize_hardcoded_bed(self):
+        bed_id = 0
+        sensors = {
+            Zone.head_and_shoulders: Sensor(id=0, zone=Zone.head_and_shoulders, reading=0),
+            Zone.back: Sensor(id=1, zone=Zone.back, reading=0),
+            Zone.buttocks: Sensor(id=2, zone=Zone.buttocks, reading=0),
+        }
 
+        actuators = {
+            Zone.head_and_shoulders: Actuator(id=0, zone=Zone.head_and_shoulders, measurement=0),
+            Zone.back: Actuator(id=1, zone=Zone.back, measurement=0),
+            Zone.buttocks: Actuator(id=2, zone=Zone.buttocks, measurement=0),
+            Zone.legs: Actuator(id=3, zone=Zone.legs, measurement=0),
+        }
 
-initialize_hardcoded_bed()
+        self.beds[bed_id] = Bed(id=bed_id, sensors=sensors, actuators=actuators)
 
+    def _determine_actuator_state(self, measurement: int) -> ActuatorStates:
+        return ActuatorStates.HIGH if measurement > 50 else ActuatorStates.LOW
 
-@app.post("/initialize_bed")
-async def initialize_bed(request: InitializeBedRequest):
-    bed_id = request.get("bed_id")
+    async def update_sensor(self, request: UpdateSensorRequest):
+        bed_id = request["bed_id"]
+        if bed_id not in self.beds:
+            raise HTTPException(status_code=404, detail="Bed not found")
+        sensors = {}
+        for i, reading in enumerate(request["zone_readings"]):
+            sensors[Zone(i)] = SensorStates[reading]
 
-    sensors = {}
-    actuators = {}
+        sensor_states = UpdateSensorStateAirtable(
+            bed_id=bed_id,
+            head_and_shoulders=sensors[Zone.head_and_shoulders],
+            back=sensors[Zone.back],
+            buttocks=sensors[Zone.buttocks],
+            legs=SensorStates[0],
+        )
 
-    for zone_str, sensor_data in request["sensors"].items():
-        zone = Zone[zone_str.lower()]
-        sensors[zone] = Sensor(id=sensor_data["id"], zone=zone, reading=sensor_data["reading"])
+        self.airtable_handler.upsert_pressure_states(sensor_states)
 
-    for zone_str, actuator_data in request["actuators"].items():
-        zone = Zone[zone_str.lower()]
-        actuators[zone] = Actuator(id=actuator_data["id"], zone=zone, measurement=actuator_data["measurement"])
+        return {"message": f"Sensor updated for bed {bed_id}"}
 
-    bed = Bed(id=bed_id, sensors=sensors, actuators=actuators)
-    beds[bed_id] = bed
+    async def update_actuator(self, request: UpdateActuatorRequest):
+        bed_id = request["bed_id"]
+        if bed_id not in self.beds:
+            raise HTTPException(status_code=404, detail="Bed not found")
 
-    return {"message": f"Bed {bed_id} initialized successfully"}
+        zone = Zone[request["zone"]]
+        if zone not in self.beds[bed_id].actuators:
+            raise HTTPException(status_code=404, detail="Actuator zone not found")
 
+        self.beds[bed_id].actuators[zone].measurement = request["measurement"]
 
-@app.post("/update_sensor")
-async def update_sensor(request: UpdateSensorRequest):
-    bed_id = request["bed_id"]
-    if bed_id not in beds:
-        raise HTTPException(status_code=404, detail="Bed not found")
+        actuator_states = UpdateActuatorQueryAirtable(
+            bed_id=bed_id,
+            head_and_shoulders=self._determine_actuator_state(
+                self.beds[bed_id].actuators[Zone.head_and_shoulders].measurement
+            ),
+            back=self._determine_actuator_state(self.beds[bed_id].actuators[Zone.back].measurement),
+            buttocks=self._determine_actuator_state(self.beds[bed_id].actuators[Zone.buttocks].measurement),
+            legs=self._determine_actuator_state(self.beds[bed_id].actuators[Zone.legs].measurement),
+        )
 
-    zone = Zone[request.get("zone")]
-    if zone not in beds[bed_id].sensors:
-        raise HTTPException(status_code=404, detail="Sensor zone not found")
+        self.airtable_handler.update_actuator_measurements(actuator_states)
 
-    beds[bed_id].sensors[zone].reading = request["reading"]
+        return {
+            "message": f"Actuator updated for bed {bed_id}, zone {zone.name}",
+            "measurement": request["measurement"],
+        }
 
-    return {"message": f"Sensor updated for bed {bed_id}, zone {zone.name}", "reading": request["reading"]}
+    async def get_bed(self, bed_id: int):
+        if bed_id not in self.beds:
+            raise HTTPException(status_code=404, detail="Bed not found")
 
-
-@app.post("/update_actuator")
-async def update_actuator(request: UpdateActuatorRequest):
-    bed_id = request["bed_id"]
-    if bed_id not in beds:
-        raise HTTPException(status_code=404, detail="Bed not found")
-
-    zone = Zone[request.get("zone")]
-    if zone not in beds[bed_id].actuators:
-        raise HTTPException(status_code=404, detail="Actuator zone not found")
-
-    beds[bed_id].actuators[zone].measurement = request["measurement"]
-
-    return {"message": f"Actuator updated for bed {bed_id}, zone {zone.name}", "measurement": request["measurement"]}
-
-
-@app.get("/bed/{bed_id}")
-async def get_bed(bed_id: int):
-    if bed_id not in beds:
-        raise HTTPException(status_code=404, detail="Bed not found")
-
-    bed = beds[bed_id]
-    return {
-        "bed_id": bed.id,
-        "sensors": {zone.name: {"id": sensor.id, "reading": sensor.reading} for zone, sensor in bed.sensors.items()},
-        "actuators": {
-            zone.name: {"id": actuator.id, "measurement": actuator.measurement}
-            for zone, actuator in bed.actuators.items()
-        },
-    }
+        bed = self.beds[bed_id]
+        return {
+            "bed_id": bed.id,
+            "sensors": {
+                zone.name: {"id": sensor.id, "reading": sensor.reading} for zone, sensor in bed.sensors.items()
+            },
+            "actuators": {
+                zone.name: {"id": actuator.id, "measurement": actuator.measurement}
+                for zone, actuator in bed.actuators.items()
+            },
+        }
