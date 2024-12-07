@@ -28,6 +28,25 @@ inputRecords = [
     }
 ]
 
+'''
+Opis działania na potrzeby Hackatonu:
+W cykly co 30 sekund powinno wydarzyć się:
+- reset stanów serwo do stanu początkowego (stan początkowy mozna najławiej opisać prostym materacem bez zadnych wybrzuszeń)
+- zebranie pomiarow z belek 
+    - porównanie pomiarów między sobą:
+        - obszar z najnizszym naciskiem: 'Ok'
+        - obszar w kolejnym naciskiem: 'Medium pressure'
+        - obszar z prawie najwyzszym naciskiem: 'High Pressure'
+        - obszar z najwyzszym naciskiem: 'Very High Pressure'
+- strefy wokół strefy z najwyzszym naciskiem zostają podniesione
+- do apki trafiają informacje:
+    - o stanach nacisku na danym obszarze zgodnie z powyzszym opisem
+    - o stanie podniesienia stref:
+        - wszystkie niepodniesine: "Low"
+        - strefa podniesiona: "High"
+
+'''
+
 recordsToUpsert = []
 for record in inputRecords:
     recordsToUpsert.append( 
