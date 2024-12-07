@@ -13,7 +13,7 @@ int move_up(Servo actuator)
             actuator.write(pos);
             delay(10);
         }
-    } 
+    }
     else if (pos > 90)
     {
         for (pos; pos >= 90; pos -= 1)
@@ -22,7 +22,7 @@ int move_up(Servo actuator)
             delay(10);
         }
     }
-    
+
     return 0;
 }
 
