@@ -17,10 +17,14 @@ table = api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID)
 inputRecords = [
     {
         'Bed ID': '1',
-        'Head And Shoulders': 0,
-        'Back': 0,
-        'Buttocks': 0,
-        'Legs': 0,
+        'Head And Shoulders Pressure': 'Ok',
+        'Back Pressure': 'Medium Pressure',
+        'Buttocks Pressure': 'High Pressure',
+        'Legs Pressure': 'Very High Pressure',
+        'Head And Shoulders State': 'Low',
+        'Back State': 'High',
+        'Buttocks State': 'Low',
+        'Legs State': 'Low'
     }
 ]
 
