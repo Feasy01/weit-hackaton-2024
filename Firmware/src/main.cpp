@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "HX711.h"
+#include "actuator.hpp"
 
 const int BED_ID = 1;
 const int NUMBER_OF_PRESS_SENSORS = 3;
@@ -9,7 +10,10 @@ const int pinout[NUMBER_OF_PRESS_SENSORS][2] = { // DOUT, SCK
     {8, 7},
     {6, 5}};
 
+const int actuator_pins[NUMBER_OF_PRESS_SENSORS] = {9, 10, 11};
+
 HX711 press_sensors[NUMBER_OF_PRESS_SENSORS];
+Servo actuators[NUMBER_OF_PRESS_SENSORS];
 
 void setup()
 {
@@ -19,6 +23,8 @@ void setup()
   {
     press_sensors[i].begin(pinout[i][0], pinout[i][1]);
     press_sensors[i].tare();
+    actuators[i].attach(actuator_pins[i]);
+    actuators[i].write(0);
   }
 }
 
@@ -26,6 +32,7 @@ void loop()
 {
   int raw_values[NUMBER_OF_PRESS_SENSORS];
   int values[NUMBER_OF_PRESS_SENSORS];
+  int index_of_max_part = -1;
 
   for (int i = 0; i < NUMBER_OF_PRESS_SENSORS; i++)
   {
@@ -51,6 +58,7 @@ void loop()
     }
     values[current_min_index] = i + 1;
     raw_values[current_min_index] = INT32_MAX;
+    index_of_max_part = current_min_index;
   }
 
   // print "Sensor x: y" for each sensor
@@ -59,16 +67,61 @@ void loop()
     Serial.print("-> Sensor " + String(i) + ": " + String(values[i]) + "\n");
   }
 
-  // if (scale.wait_ready_timeout(1000))
-  // {
-  //   long reading = scale.get_value(5);
-  //   Serial.print("HX711 reading: ");
-  //   Serial.println(reading);
-  // }
-  // else
-  // {
-  //   Serial.println("HX711 not found.");
-  // }
+  // print "Max part: x" for the sensor with the highest value
+  Serial.print("-> Max part index: " + String(index_of_max_part) + "\n");
 
-  delay(1500);
+  int first_neighbor_of_max_part = index_of_max_part - 1;
+  int second_neighbor_of_max_part = index_of_max_part + 1;
+
+  if (first_neighbor_of_max_part < 0)
+  {
+    first_neighbor_of_max_part = -1;
+  }
+
+  if (second_neighbor_of_max_part >= NUMBER_OF_PRESS_SENSORS)
+  {
+    second_neighbor_of_max_part = -1;
+  }
+
+  // print "First neighbor: x" for the sensor with the second highest value
+  if (first_neighbor_of_max_part != -1)
+  {
+    Serial.print("-> First neighbor: " + String(first_neighbor_of_max_part) + "\n");
+  }
+  else
+  {
+    Serial.print("-> First neighbor: None\n");
+  }
+
+  // print "Second neighbor: x" for the sensor with the third highest value
+  if (second_neighbor_of_max_part != -1)
+  {
+    Serial.print("-> Second neighbor: " + String(second_neighbor_of_max_part) + "\n");
+  }
+  else
+  {
+    Serial.print("-> Second neighbor: None\n");
+  }
+
+  int neighbors[2] = {first_neighbor_of_max_part, second_neighbor_of_max_part};
+
+  // move up the actuators of the neighbors
+  for (int i = 0; i < 2; i++)
+  {
+    if (neighbors[i] != -1)
+    {
+      move_up(actuators[neighbors[i]]);
+    }
+  }
+
+  // move down the rest of the actuators
+  for (int i = 0; i < NUMBER_OF_PRESS_SENSORS; i++)
+  {
+    if (i != first_neighbor_of_max_part && i != second_neighbor_of_max_part)
+    {
+      move_down(actuators[i]);
+    }
+  }
+
+  delay(5000);
 }
